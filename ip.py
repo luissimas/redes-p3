@@ -1,6 +1,10 @@
 from iputils import *
 
 
+def ignore_bits(data, nbits):
+    return data >> nbits << nbits
+
+
 class IP:
     def __init__(self, enlace):
         """
@@ -15,8 +19,18 @@ class IP:
         self.meu_endereco = None
 
     def __raw_recv(self, datagrama):
-        dscp, ecn, identification, flags, frag_offset, ttl, proto, \
-           src_addr, dst_addr, payload = read_ipv4_header(datagrama)
+        (
+            dscp,
+            ecn,
+            identification,
+            flags,
+            frag_offset,
+            ttl,
+            proto,
+            src_addr,
+            dst_addr,
+            payload,
+        ) = read_ipv4_header(datagrama)
         if dst_addr == self.meu_endereco:
             # atua como host
             if proto == IPPROTO_TCP and self.callback:
@@ -28,10 +42,16 @@ class IP:
             self.enlace.enviar(datagrama, next_hop)
 
     def _next_hop(self, dest_addr):
-        # TODO: Use a tabela de encaminhamento para determinar o próximo salto
-        # (next_hop) a partir do endereço de destino do datagrama (dest_addr).
-        # Retorne o next_hop para o dest_addr fornecido.
-        pass
+        for cidr, next_hop in self.tabela:
+            net, fixed_bits = cidr.split("/")
+
+            variable_bits = 32 - int(fixed_bits)
+
+            (net,) = struct.unpack("!I", str2addr(net))
+            (dest,) = struct.unpack("!I", str2addr(dest_addr))
+
+            if ignore_bits(net, variable_bits) == ignore_bits(dest, variable_bits):
+                return next_hop
 
     def definir_endereco_host(self, meu_endereco):
         """
@@ -49,8 +69,7 @@ class IP:
         Onde os CIDR são fornecidos no formato 'x.y.z.w/n', e os
         next_hop são fornecidos no formato 'x.y.z.w'.
         """
-        # TODO: Guarde a tabela de encaminhamento. Se julgar conveniente,
-        # converta-a em uma estrutura de dados mais eficiente.
+        self.tabela = tabela
         pass
 
     def registrar_recebedor(self, callback):
