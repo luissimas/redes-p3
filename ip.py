@@ -43,16 +43,24 @@ class IP:
             self.enlace.enviar(datagrama, next_hop)
 
     def _next_hop(self, dest_addr):
-        for cidr, next_hop in self.tabela:
-            net, fixed_bits = cidr.split("/")
+        hop = None
+        max_prefix = 0
 
-            variable_bits = 32 - int(fixed_bits)
+        for cidr, next_hop in self.tabela:
+            net, prefix = cidr.split("/")
+
+            prefix = int(prefix)
+
+            variable_bits = 32 - prefix
 
             (net,) = struct.unpack("!I", str2addr(net))
             (dest,) = struct.unpack("!I", str2addr(dest_addr))
 
-            if ignore_bits(net, variable_bits) == ignore_bits(dest, variable_bits):
-                return next_hop
+            if (ignore_bits(net, variable_bits) == ignore_bits(dest, variable_bits)) and prefix >= max_prefix:
+                max_prefix = prefix
+                hop = next_hop
+
+        return hop
 
     def _counter_next(self):
         self.counter += 1
