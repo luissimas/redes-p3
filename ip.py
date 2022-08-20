@@ -33,13 +33,30 @@ class IP:
             payload,
         ) = read_ipv4_header(datagrama)
         if dst_addr == self.meu_endereco:
-            # atua como host
+            # Atua como host
             if proto == IPPROTO_TCP and self.callback:
                 self.callback(src_addr, dst_addr, payload)
         else:
-            # atua como roteador
+            # Atua como roteador
+            # Caso o TTL do datagrama seja 1, ele deve ser descartado
+            if (ttl == 1):
+                return
+
+            # Caso contrário, decrementamos o TTL e enviamos o datagrama
+            # para o próximo nó da rede
             next_hop = self._next_hop(dst_addr)
-            # TODO: Trate corretamente o campo TTL do datagrama
+
+            datagrama = bytearray(datagrama)
+
+            # Decrementando o TTL
+            datagrama[8] = ttl - 1
+
+            # Calculando e adicionando o checksum
+            datagrama[10:12] = b"\x00\x00"
+            datagrama[10:12] = struct.pack("!H", calc_checksum(datagrama))
+
+            datagrama = bytes(datagrama)
+
             self.enlace.enviar(datagrama, next_hop)
 
     def _next_hop(self, dest_addr):
