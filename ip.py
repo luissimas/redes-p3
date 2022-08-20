@@ -17,6 +17,7 @@ class IP:
         self.enlace.registrar_recebedor(self.__raw_recv)
         self.ignore_checksum = self.enlace.ignore_checksum
         self.meu_endereco = None
+        self.counter = -1
 
     def __raw_recv(self, datagrama):
         (
@@ -53,6 +54,10 @@ class IP:
             if ignore_bits(net, variable_bits) == ignore_bits(dest, variable_bits):
                 return next_hop
 
+    def _counter_next(self):
+        self.counter += 1
+        return self.counter
+
     def definir_endereco_host(self, meu_endereco):
         """
         Define qual o endereço IPv4 (string no formato x.y.z.w) deste host.
@@ -84,6 +89,33 @@ class IP:
         (string no formato x.y.z.w).
         """
         next_hop = self._next_hop(dest_addr)
-        # TODO: Assumindo que a camada superior é o protocolo TCP, monte o
-        # datagrama com o cabeçalho IP, contendo como payload o segmento.
+
+        # Estrutura do header
+        header = struct.pack(
+            "!BBHHHBBHII",
+            (4 << 4) | 5,         # Version, IHL
+            0,                    # DSCP, ECN
+            20 + len(segmento),   # Total Length
+            self._counter_next(), # Identification
+            0,                    # Flags, Fragment Offset
+            64,                   # Time To Live
+            6,                    # Protocol (TCP)
+            0,                    # Checksum
+            0,                    # Source  IP Address
+            0                     # Destination IP Address
+        )
+
+        header = bytearray(header)
+
+        # Adicionando endereços de origem e destino
+        header[12:16] = str2addr(self.meu_endereco)
+        header[16:20] = str2addr(dest_addr)
+
+        # Calculando e adicionando o checksum
+        header[10:12] = struct.pack("!H", calc_checksum(header))
+
+        header = bytes(header)
+
+        datagrama = header + segmento
+
         self.enlace.enviar(datagrama, next_hop)
