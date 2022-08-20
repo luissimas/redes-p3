@@ -5,6 +5,56 @@ def ignore_bits(data, nbits):
     return data >> nbits << nbits
 
 
+def datagrama_ip(segmento, id, protocol, src_addr, dest_addr):
+    # Estrutura do header
+    header = struct.pack(
+        "!BBHHHBBHII",
+        (4 << 4) | 5,         # Version, IHL
+        0,                    # DSCP, ECN
+        20 + len(segmento),   # Total Length
+        id,                   # Identification
+        0,                    # Flags, Fragment Offset
+        64,                   # Time To Live
+        protocol,             # Protocol (TCP)
+        0,                    # Checksum
+        0,                    # Source  IP Address
+        0                     # Destination IP Address
+    )
+
+    header = bytearray(header)
+
+    # Adicionando endereços de origem e destino
+    header[12:16] = str2addr(src_addr)
+    header[16:20] = str2addr(dest_addr)
+
+    # Calculando e adicionando o checksum
+    header[10:12] = struct.pack("!H", calc_checksum(header))
+
+    return bytes(header) + segmento
+
+
+def datagrama_icmp(segmento):
+    # Estrutura do datagrama
+    datagrama = struct.pack(
+        "!BBHII",
+        11, # Type
+        0,  # Code
+        0,  # Checksum
+        0,  # Não utilizado
+        0   # Cabeçalho do datagrama descartado + 8 primeiros bytes do segmento
+    )
+
+    datagrama = bytearray(datagrama)
+
+    # Adicionando dados do datagrama descartado
+    datagrama[8:12] = segmento[:28]
+
+    # Calculando e adicionando o checksum
+    datagrama[2:4] = struct.pack("!H", calc_checksum(datagrama))
+
+    return bytes(datagrama)
+
+
 class IP:
     def __init__(self, enlace):
         """
@@ -38,26 +88,41 @@ class IP:
                 self.callback(src_addr, dst_addr, payload)
         else:
             # Atua como roteador
-            # Caso o TTL do datagrama seja 1, ele deve ser descartado
             if (ttl == 1):
-                return
+                # Caso o TTL do datagrama seja 1, ele deve ser descartado e
+                # o remetente deve ser avisado
+                next_hop = self._next_hop(src_addr)
 
-            # Caso contrário, decrementamos o TTL e enviamos o datagrama
-            # para o próximo nó da rede
-            next_hop = self._next_hop(dst_addr)
+                # Pacote ICMP
+                segmento = datagrama_icmp(datagrama)
 
-            datagrama = bytearray(datagrama)
+                # Datagrama IP
+                datagrama = datagrama_ip(
+                    segmento,
+                    self._counter_next(),
+                    IPPROTO_ICMP,
+                    self.meu_endereco,
+                    src_addr
+                )
 
-            # Decrementando o TTL
-            datagrama[8] = ttl - 1
+                self.enlace.enviar(datagrama, next_hop)
+            else:
+                # Caso contrário, decrementamos o TTL e enviamos o datagrama
+                # para o próximo nó da rede
+                next_hop = self._next_hop(dst_addr)
 
-            # Calculando e adicionando o checksum
-            datagrama[10:12] = b"\x00\x00"
-            datagrama[10:12] = struct.pack("!H", calc_checksum(datagrama))
+                datagrama = bytearray(datagrama)
 
-            datagrama = bytes(datagrama)
+                # Decrementando o TTL
+                datagrama[8] = ttl - 1
 
-            self.enlace.enviar(datagrama, next_hop)
+                # Calculando e adicionando o checksum
+                datagrama[10:12] = b"\x00\x00"
+                datagrama[10:12] = struct.pack("!H", calc_checksum(datagrama))
+
+                datagrama = bytes(datagrama)
+
+                self.enlace.enviar(datagrama, next_hop)
 
     def _next_hop(self, dest_addr):
         hop = None
@@ -115,32 +180,12 @@ class IP:
         """
         next_hop = self._next_hop(dest_addr)
 
-        # Estrutura do header
-        header = struct.pack(
-            "!BBHHHBBHII",
-            (4 << 4) | 5,         # Version, IHL
-            0,                    # DSCP, ECN
-            20 + len(segmento),   # Total Length
-            self._counter_next(), # Identification
-            0,                    # Flags, Fragment Offset
-            64,                   # Time To Live
-            6,                    # Protocol (TCP)
-            0,                    # Checksum
-            0,                    # Source  IP Address
-            0                     # Destination IP Address
+        datagrama = datagrama_ip(
+            segmento,
+            self._counter_next(),
+            IPPROTO_TCP,
+            self.meu_endereco,
+            dest_addr
         )
-
-        header = bytearray(header)
-
-        # Adicionando endereços de origem e destino
-        header[12:16] = str2addr(self.meu_endereco)
-        header[16:20] = str2addr(dest_addr)
-
-        # Calculando e adicionando o checksum
-        header[10:12] = struct.pack("!H", calc_checksum(header))
-
-        header = bytes(header)
-
-        datagrama = header + segmento
 
         self.enlace.enviar(datagrama, next_hop)
