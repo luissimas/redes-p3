@@ -118,7 +118,7 @@ class IP:
 
                 # Calculando e adicionando o checksum
                 datagrama[10:12] = b"\x00\x00"
-                datagrama[10:12] = struct.pack("!H", calc_checksum(datagrama))
+                datagrama[10:12] = struct.pack("!H", calc_checksum(datagrama[:20]))
 
                 datagrama = bytes(datagrama)
 
